@@ -9,6 +9,7 @@ license.workspace = true
 novanet-core.workspace = true
 novanet-wire.workspace = true
 novanet-crypto.workspace = true
+novanet-congestion.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

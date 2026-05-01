@@ -89,14 +89,10 @@ fn encode_retry(p: &RetryPayload, buf: &mut BytesMut) -> NovaResult<()> {
 }
 
 fn encode_handshake(p: &HandshakePayload, buf: &mut BytesMut) -> NovaResult<()> {
-    if p.crypto_data.len() > u16::MAX as usize {
-        return Err(NovaError::PacketTooLarge {
-            size: p.crypto_data.len(),
-            max: u16::MAX as usize,
-        });
-    }
-    buf.put_u16(p.crypto_data.len() as u16);
-    buf.put_slice(&p.crypto_data);
+    // Fixed layout: server_ephemeral_pk(32) || server_static_pk(32) || server_signature(64) = 128 bytes
+    buf.put_slice(&p.server_ephemeral_pk);
+    buf.put_slice(&p.server_static_pk);
+    buf.put_slice(&p.server_signature);
     Ok(())
 }
 
@@ -216,15 +212,18 @@ fn decode_retry(mut buf: Bytes) -> NovaResult<RetryPayload> {
 }
 
 fn decode_handshake(mut buf: Bytes) -> NovaResult<HandshakePayload> {
-    if buf.remaining() < 2 {
-        return Err(NovaError::PacketTooShort { needed: 2, got: buf.remaining() });
+    // Fixed layout: server_ephemeral_pk(32) || server_static_pk(32) || server_signature(64) = 128 bytes
+    const HS_SIZE: usize = 32 + 32 + 64;
+    if buf.remaining() < HS_SIZE {
+        return Err(NovaError::PacketTooShort { needed: HS_SIZE, got: buf.remaining() });
     }
-    let data_len = buf.get_u16() as usize;
-    if buf.remaining() < data_len {
-        return Err(NovaError::PacketTooShort { needed: data_len, got: buf.remaining() });
-    }
-    let crypto_data = buf.copy_to_bytes(data_len);
-    Ok(HandshakePayload { crypto_data })
+    let mut server_ephemeral_pk = [0u8; 32];
+    let mut server_static_pk = [0u8; 32];
+    let mut server_signature = [0u8; 64];
+    buf.copy_to_slice(&mut server_ephemeral_pk);
+    buf.copy_to_slice(&mut server_static_pk);
+    buf.copy_to_slice(&mut server_signature);
+    Ok(HandshakePayload { server_ephemeral_pk, server_static_pk, server_signature })
 }
 
 fn decode_path_challenge(mut buf: Bytes) -> NovaResult<PathChallengePayload> {

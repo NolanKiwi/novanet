@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use novanet_core::{
     ids::{NodeId, ServiceId},
     PacketType,
@@ -95,8 +94,12 @@ pub struct RetryPayload {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandshakePayload {
-    /// Raw crypto bytes (server ephemeral PK, signature, etc.).
-    pub crypto_data: Bytes,
+    /// Server's ephemeral X25519 public key (32 bytes).
+    pub server_ephemeral_pk: [u8; 32],
+    /// Server's long-term Ed25519 public key (32 bytes).
+    pub server_static_pk: [u8; 32],
+    /// Ed25519 signature over (session_id || server_ephemeral_pk) (64 bytes).
+    pub server_signature: [u8; 64],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

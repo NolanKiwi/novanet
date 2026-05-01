@@ -8,3 +8,4 @@ license.workspace = true
 [dependencies]
 novanet-core.workspace = true
 thiserror.workspace = true
+ring.workspace = true

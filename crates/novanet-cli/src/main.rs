@@ -106,7 +106,11 @@ fn cmd_inspect(hex: &str) -> Result<()> {
             println!("  [RETRY] token={} bytes", r.retry_token.len());
         }
         PacketPayload::Handshake(h) => {
-            println!("  [HANDSHAKE] crypto_data={} bytes", h.crypto_data.len());
+            println!(
+                "  [HANDSHAKE] server_ephem_pk={:02X?}... server_sig={:02X?}...",
+                &h.server_ephemeral_pk[..4],
+                &h.server_signature[..4],
+            );
         }
         PacketPayload::Padding { count } => {
             println!("  [PADDING] {count} bytes");

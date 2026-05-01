@@ -1,7 +1,9 @@
+use novanet_congestion::{AimdController, CongestionController};
 use novanet_core::{
     constants::{INITIAL_RTT_MS, MAX_SESSION_IDLE_SECS},
     ids::{PathId, SessionId},
 };
+use novanet_crypto::{EphemeralKeypair, SessionKeys};
 use std::time::{Duration, Instant};
 
 use crate::retransmit::RetransmitQueue;
@@ -33,28 +35,18 @@ impl std::fmt::Display for SessionStatus {
 /// RTT estimator (RFC 6298 style) per session/path.
 #[derive(Debug, Clone)]
 pub struct RttEstimator {
-    /// Smoothed RTT.
     pub srtt: Duration,
-    /// RTT variance.
     pub rttvar: Duration,
-    /// Minimum observed RTT.
     pub min_rtt: Duration,
-    /// Whether we have any samples yet.
     initialized: bool,
 }
 
 impl RttEstimator {
     pub fn new() -> Self {
         let initial = Duration::from_millis(INITIAL_RTT_MS);
-        RttEstimator {
-            srtt: initial,
-            rttvar: initial / 2,
-            min_rtt: initial,
-            initialized: false,
-        }
+        RttEstimator { srtt: initial, rttvar: initial / 2, min_rtt: initial, initialized: false }
     }
 
-    /// Update estimates with a new RTT sample (already corrected for ACK delay).
     pub fn update(&mut self, sample: Duration) {
         if !self.initialized {
             self.srtt = sample;
@@ -63,26 +55,20 @@ impl RttEstimator {
             self.initialized = true;
             return;
         }
-
         if sample < self.min_rtt {
             self.min_rtt = sample;
         }
-
-        let srtt_secs = self.srtt.as_secs_f64();
-        let var_secs = self.rttvar.as_secs_f64();
-        let sample_secs = sample.as_secs_f64();
-
-        let new_var = (1.0 - 0.25) * var_secs + 0.25 * (srtt_secs - sample_secs).abs();
-        let new_srtt = (1.0 - 0.125) * srtt_secs + 0.125 * sample_secs;
-
+        let srtt_s = self.srtt.as_secs_f64();
+        let var_s = self.rttvar.as_secs_f64();
+        let sample_s = sample.as_secs_f64();
+        let new_var = (1.0 - 0.25) * var_s + 0.25 * (srtt_s - sample_s).abs();
+        let new_srtt = (1.0 - 0.125) * srtt_s + 0.125 * sample_s;
         self.rttvar = Duration::from_secs_f64(new_var.max(0.0));
-        self.srtt = Duration::from_secs_f64(new_srtt.max(0.001)); // min 1ms
+        self.srtt = Duration::from_secs_f64(new_srtt.max(0.001));
     }
 
-    /// Current RTO (RFC 6298).
     pub fn rto(&self) -> Duration {
-        let rto = self.srtt + 4 * self.rttvar;
-        rto.max(Duration::from_millis(200))
+        (self.srtt + 4 * self.rttvar).max(Duration::from_millis(200))
     }
 }
 
@@ -114,6 +100,15 @@ impl StreamInfo {
     }
 }
 
+/// Wrapper giving `Box<dyn CongestionController>` a Debug impl.
+pub struct CcBox(pub Box<dyn CongestionController>);
+
+impl std::fmt::Debug for CcBox {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CcBox(cwnd={})", self.0.congestion_window())
+    }
+}
+
 /// In-memory state for a single NovaNet session.
 #[derive(Debug)]
 pub struct SessionState {
@@ -126,7 +121,7 @@ pub struct SessionState {
     // Packet number tracking
     pub next_send_pn: u64,
     pub largest_received_pn: u64,
-    pub received_bitmap: u128,   // sliding window of received packet numbers
+    pub received_bitmap: u128,
 
     // RTT
     pub rtt: RttEstimator,
@@ -134,7 +129,7 @@ pub struct SessionState {
     // Streams
     pub streams: Vec<StreamInfo>,
 
-    // Bytes counters
+    // Byte/packet counters
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub packets_sent: u64,
@@ -147,12 +142,23 @@ pub struct SessionState {
     // Idle timeout
     pub idle_timeout: Duration,
 
-    // Retransmission queue (unacknowledged outgoing packets)
+    // Retransmission queue
     pub retransmit: RetransmitQueue,
 
     // Duplicate-ACK tracking for fast retransmit
     pub last_acked: u64,
     pub dup_ack_count: u32,
+
+    // Phase 4: cryptographic session state
+    /// true = we initiated (client), false = we accepted (server)
+    pub is_initiator: bool,
+    /// Client stores the ephemeral key here until the server's HANDSHAKE arrives.
+    pub pending_ephem: Option<EphemeralKeypair>,
+    /// Derived AEAD keys; None until handshake completes.
+    pub session_keys: Option<SessionKeys>,
+
+    // Phase 5: congestion control
+    pub congestion: CcBox,
 }
 
 impl SessionState {
@@ -179,6 +185,10 @@ impl SessionState {
             retransmit: RetransmitQueue::new(),
             last_acked: 0,
             dup_ack_count: 0,
+            is_initiator: false,
+            pending_ephem: None,
+            session_keys: None,
+            congestion: CcBox(Box::new(AimdController::new())),
         }
     }
 
@@ -190,7 +200,6 @@ impl SessionState {
         matches!(self.status, SessionStatus::Closed | SessionStatus::Draining)
     }
 
-    /// Get and increment the next outgoing packet number.
     pub fn next_packet_number(&mut self) -> u64 {
         let pn = self.next_send_pn;
         self.next_send_pn += 1;
@@ -200,12 +209,9 @@ impl SessionState {
     /// Record receipt of a packet number. Returns true if it's new (not a duplicate/replay).
     pub fn record_received(&mut self, pn: u64) -> bool {
         if pn < self.largest_received_pn.saturating_sub(127) {
-            // Far outside the window; treat as replay
             return false;
         }
-
         if pn > self.largest_received_pn {
-            // Shift the window forward
             let shift = pn - self.largest_received_pn;
             if shift >= 128 {
                 self.received_bitmap = 0;
@@ -216,14 +222,13 @@ impl SessionState {
             self.received_bitmap |= 1;
             true
         } else {
-            // Within window — check if already seen
             let offset = self.largest_received_pn - pn;
             if offset >= 128 {
-                return false; // outside bitmap range
+                return false;
             }
             let mask = 1u128 << offset;
             if self.received_bitmap & mask != 0 {
-                false // duplicate
+                false
             } else {
                 self.received_bitmap |= mask;
                 true
@@ -292,7 +297,7 @@ mod tests {
     fn record_received_out_of_order() {
         let mut s = SessionState::new(SessionId::generate());
         assert!(s.record_received(10));
-        assert!(s.record_received(8)); // out of order but within window
+        assert!(s.record_received(8));
         assert!(!s.record_received(8), "duplicate out-of-order should return false");
         assert!(s.record_received(9));
     }
@@ -300,11 +305,9 @@ mod tests {
     #[test]
     fn record_received_old_packet_replay() {
         let mut s = SessionState::new(SessionId::generate());
-        // Advance window to 200
         for i in 100..=200u64 {
             s.record_received(i);
         }
-        // Packet 0 is too old
         assert!(!s.record_received(0), "very old packet should be rejected as replay");
     }
 
@@ -338,5 +341,11 @@ mod tests {
         assert_eq!(s.status, SessionStatus::Handshaking);
         s.transition(SessionStatus::Established);
         assert!(s.is_established());
+    }
+
+    #[test]
+    fn initial_congestion_window_allows_send() {
+        let s = SessionState::new(SessionId::generate());
+        assert!(s.congestion.0.can_send(0, 1200));
     }
 }
