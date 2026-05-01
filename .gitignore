@@ -1,0 +1,22 @@
+/target/
+/benches/results/*.tmp
+Cargo.lock.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Criterion HTML reports (large; regenerate with cargo bench)
+/target/criterion/
+
+# cargo-fuzz artifacts
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/

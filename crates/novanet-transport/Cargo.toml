@@ -1,0 +1,19 @@
+[package]
+name = "novanet-transport"
+description = "UDP transport, session management, and I/O event loop for NovaNet (Phase 2)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+novanet-core.workspace = true
+novanet-wire.workspace = true
+novanet-crypto.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+novanet-sim.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

@@ -1,0 +1,9 @@
+[package]
+name = "novanet-congestion"
+description = "Pluggable congestion control for NovaNet (Phase 5)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+novanet-core.workspace = true

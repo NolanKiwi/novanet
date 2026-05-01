@@ -1,0 +1,19 @@
+[package]
+name = "novanet-cli"
+description = "CLI inspection and diagnostic tool for NovaNet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "novanet"
+path = "src/main.rs"
+
+[dependencies]
+novanet-core.workspace = true
+novanet-wire.workspace = true
+bytes.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

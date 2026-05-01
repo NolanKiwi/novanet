@@ -1,0 +1,64 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/novanet-core",
+    "crates/novanet-wire",
+    "crates/novanet-crypto",
+    "crates/novanet-transport",
+    "crates/novanet-congestion",
+    "crates/novanet-multipath",
+    "crates/novanet-observability",
+    "crates/novanet-cli",
+    "crates/novanet-sim",
+    "examples/echo-server",
+    "examples/echo-client",
+    "examples/bench-compare",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/NolanKiwi/novanet"
+
+[workspace.dependencies]
+# Internal crates
+novanet-core = { path = "crates/novanet-core" }
+novanet-wire = { path = "crates/novanet-wire" }
+novanet-crypto = { path = "crates/novanet-crypto" }
+novanet-transport = { path = "crates/novanet-transport" }
+novanet-congestion = { path = "crates/novanet-congestion" }
+novanet-multipath = { path = "crates/novanet-multipath" }
+novanet-observability = { path = "crates/novanet-observability" }
+novanet-sim = { path = "crates/novanet-sim" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Buffer management
+bytes = "1"
+
+# Serialization (only for config/CLI, not wire format)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Testing
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Crypto (Phase 4)
+ring = "0.17"
+
+# Random
+rand = "0.8"

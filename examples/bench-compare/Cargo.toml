@@ -1,0 +1,18 @@
+[package]
+name = "bench-compare"
+description = "NovaNet vs TCP benchmark: latency, throughput, connection setup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bench-compare"
+path = "src/main.rs"
+
+[dependencies]
+novanet-core.workspace = true
+novanet-transport.workspace = true
+bytes.workspace = true
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true

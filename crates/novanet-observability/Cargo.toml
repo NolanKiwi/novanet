@@ -1,0 +1,10 @@
+[package]
+name = "novanet-observability"
+description = "Structured events, metrics, and tracing for NovaNet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+novanet-core.workspace = true
+tracing.workspace = true
